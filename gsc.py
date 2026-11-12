@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Client minimale per l'API di Google Search Console (sola lettura).
 
-Credenziali: service account Google, letto dalla variabile d'ambiente
-GSC_SA_KEY_B64 (il file JSON della chiave codificato in base64) oppure,
-in alternativa, GSC_SA_KEY_FILE (percorso del file JSON).
+Credenziali: file JSON di Google codificato in base64 nella variabile
+d'ambiente GSC_KEY_B64, oppure percorso del file in GSC_KEY_FILE.
+Sono accettati due tipi di file, riconosciuti dal campo "type":
+  - authorized_user: le Application Default Credentials create con
+    `gcloud auth application-default login` (accesso come utente);
+  - service_account: la chiave di un account di servizio.
 
 Uso:
   python3 gsc.py sites
@@ -22,6 +25,7 @@ import sys
 from urllib.parse import quote
 
 from google.auth.transport.requests import AuthorizedSession
+from google.oauth2 import credentials as user_credentials
 from google.oauth2 import service_account
 
 SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly"]
@@ -30,16 +34,22 @@ PAGE = 25000  # massimo di righe per chiamata
 
 
 def session():
-    b64 = os.environ.get("GSC_SA_KEY_B64")
-    path = os.environ.get("GSC_SA_KEY_FILE")
+    b64 = os.environ.get("GSC_KEY_B64") or os.environ.get("GSC_SA_KEY_B64")
+    path = os.environ.get("GSC_KEY_FILE") or os.environ.get("GSC_SA_KEY_FILE")
     if b64:
         info = json.loads(base64.b64decode(b64))
     elif path:
         with open(path, encoding="utf-8") as f:
             info = json.load(f)
     else:
-        sys.exit("Credenziali mancanti: imposta GSC_SA_KEY_B64 o GSC_SA_KEY_FILE.")
-    creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+        sys.exit("Credenziali mancanti: imposta GSC_KEY_B64 o GSC_KEY_FILE.")
+    kind = info.get("type")
+    if kind == "authorized_user":
+        creds = user_credentials.Credentials.from_authorized_user_info(info, scopes=SCOPES)
+    elif kind == "service_account":
+        creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+    else:
+        sys.exit(f"Tipo di credenziale non supportato: {kind!r}")
     return AuthorizedSession(creds)
 
 
